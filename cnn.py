@@ -25,7 +25,7 @@ class ImageBatchDataset(Dataset):
 
         try:
             with Image.open(file_path) as img:
-                img = img.convert('RBG')
+                img = img.convert('RGB')
 
                 if self.transform:
                     img = self.transform(img)
