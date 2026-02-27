@@ -1,38 +1,56 @@
-import os
 import torch
-from PIL import Image
-from torchvision import transforms
-from torch.utils.data import Dataset, DataLoader
+import torch.nn as nn
+import torch.nn.functional as F
 
-class ImageBatchDataset(Dataset):
-    def __init__(self, folders, data_dir, transform=None):
-        self.file_paths = []
-        self.transform = transform
-
-        for folder in folders:
-            for i in range(100):
-                folder_path = os.path.join(data_dir, folder, str(i).zfill(2))
-                
-                if os.path.exists(folder_path):
-                    for f in os.listdir(folder_path):
-                        self.file_paths.append((os.path.join(folder_path, f), folder))
-
-    def __len__(self):
-        return len(self.file_paths)
-    
-    def __getitem__(self, idx):
-        file_path, folder = self.file_paths[idx]
-
-        try:
-            with Image.open(file_path) as img:
-                img = img.convert('RGB')
-
-                if self.transform:
-                    img = self.transform(img)
-                
-                return img, folder
+class ResidualBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, stride=1):
+        super().__init__()
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(out_channels)
         
-        except Exception as e:
-            print(f"While getting {idx} index from ImageBatchDataset, got {e}.")
-            return torch.zeros((3, 512, 512)), folder
+        self.shortcut = nn.Sequential()
+        if stride != 1 or in_channels != out_channels:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(out_channels)
+            )
+
+    def forward(self, x):
+        out = F.relu(self.bn1(self.conv1(x)))
+        out = self.bn2(self.conv2(out))
+        out += self.shortcut(x)
+        return F.relu(out)
+class DeepfakeCNN(nn.Module):
+    def __init__(self):
+        # 512x512 -> 256x256
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        self.bn1 = nn.BatchNorm2d(64)
+        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1) # 128x128
+
+        # Residual Layers
+        self.layer1 = ResidualBlock(64, 128, stride=2)   # -> 64x64
+        self.layer2 = ResidualBlock(128, 256, stride=2)  # -> 32x32
+        self.layer3 = ResidualBlock(256, 512, stride=2)  # -> 16x16
         
+        # Global Context
+        self.gap = nn.AdaptiveAvgPool2d((1, 1))
+        self.flatten = nn.Flatten()
+        
+        # Final Embedding Layer
+        self.fc = nn.Linear(512, embedding_dim)
+        self.bn_feat = nn.BatchNorm1d(embedding_dim) # Helps normalize embeddings
+
+    def forward(self, x):
+        x = F.relu(self.bn1(self.conv1(x)))
+        x = self.maxpool(x)
+        
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        
+        x = self.gap(x)
+        x = self.flatten(x)
+        x = self.fc(x)
+        return self.bn_feat(x)
