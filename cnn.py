@@ -23,7 +23,7 @@ class ResidualBlock(nn.Module):
         out += self.shortcut(x)
         return F.relu(out)
 class DeepfakeCNN(nn.Module):
-    def __init__(self):
+    def __init__(self, embedding_dim=512):
         # 512x512 -> 256x256
         self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
